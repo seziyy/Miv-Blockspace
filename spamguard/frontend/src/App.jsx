@@ -6,7 +6,6 @@ const MAX_BLOCKS = 30;
 const MONAD_EXPLORER_TX_URL = "https://testnet.monadexplorer.com/tx/";
 const BRAND_PHOTO_URL = "/miv-blockspace-photo.png";
 const SCRAMBLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-const DASHBOARD_LABEL = "Dashboard";
 
 function normalizeTimestamp(timestamp) {
   if (!timestamp) return null;
@@ -262,8 +261,8 @@ function OracleHashStrip({ txHashes }) {
   );
 }
 
-function ScrambleDashboardButtonText() {
-  const [label, setLabel] = useState(DASHBOARD_LABEL);
+function ScrambleButtonText({ text }) {
+  const [label, setLabel] = useState(text);
   const intervalRef = useRef(null);
 
   function clearScramble() {
@@ -279,7 +278,7 @@ function ScrambleDashboardButtonText() {
     intervalRef.current = window.setInterval(() => {
       frame += 1;
       setLabel(
-        DASHBOARD_LABEL.split("")
+        text.split("")
           .map((char, index) => {
             if (char === " ") return " ";
             if (frame > index + 5) return char;
@@ -288,12 +287,16 @@ function ScrambleDashboardButtonText() {
           .join(""),
       );
 
-      if (frame > DASHBOARD_LABEL.length + 6) {
+      if (frame > text.length + 6) {
         clearScramble();
-        setLabel(DASHBOARD_LABEL);
+        setLabel(text);
       }
     }, 35);
   }
+
+  useEffect(() => {
+    setLabel(text);
+  }, [text]);
 
   useEffect(() => clearScramble, []);
 
@@ -550,7 +553,7 @@ export default function App() {
           </div>
 
           <a className="inline-flex min-w-[142px] items-center justify-center rounded-[12px] border border-[#2b2b2b] bg-[#5f7f73] px-5 py-2.5 text-[16px] font-black uppercase text-[#fffaf0]" href="/landing.html">
-            <ScrambleDashboardButtonText />
+            <ScrambleButtonText text="Landing" />
           </a>
         </header>
 
