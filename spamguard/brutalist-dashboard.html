@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SpamGuard brutalist dashboard</title>
+    <style>
+      :root {
+        color-scheme: dark light;
+        --bg: #050505;
+        --surface-1: #0d0d0d;
+        --surface-2: #121212;
+        --surface-3: #191919;
+        --text-primary: #f2f2f2;
+        --text-secondary: #b3b3b3;
+        --text-muted: #7a7a7a;
+        --border-strong: #5e5e5e;
+        --border-soft: #333333;
+        --signal-warn: #9a9a9a;
+        --signal-danger: #d0d0d0;
+        --signal-ok: #6f6f6f;
+        --bar-base: #242424;
+        --bar-warn: #535353;
+        --bar-danger: #808080;
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f4f4f4;
+          --surface-1: #ffffff;
+          --surface-2: #f0f0f0;
+          --surface-3: #e8e8e8;
+          --text-primary: #101010;
+          --text-secondary: #353535;
+          --text-muted: #6a6a6a;
+          --border-strong: #3f3f3f;
+          --border-soft: #8a8a8a;
+          --signal-warn: #666666;
+          --signal-danger: #2f2f2f;
+          --signal-ok: #8a8a8a;
+          --bar-base: #cbcbcb;
+          --bar-warn: #9f9f9f;
+          --bar-danger: #6d6d6d;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text-primary);
+        font-family: "Courier New", Courier, monospace;
+      }
+
+      .shell {
+        min-height: 100vh;
+        border-top: 1px solid var(--border-strong);
+        border-left: 1px solid var(--border-strong);
+      }
+
+      .nav {
+        display: flex;
+        flex-wrap: wrap;
+        border-bottom: 1px solid var(--border-strong);
+        background: var(--surface-1);
+      }
+
+      .nav-tab {
+        padding: 12px 16px;
+        border-right: 1px solid var(--border-strong);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.18em;
+        color: var(--text-secondary);
+      }
+
+      .nav-tab.status {
+        border-color: var(--signal-warn);
+        color: var(--text-primary);
+      }
+
+      .dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        margin-right: 8px;
+        border: 1px solid var(--signal-warn);
+        vertical-align: middle;
+        animation: blink 1.4s steps(1, end) infinite;
+      }
+
+      @keyframes blink {
+        50% {
+          opacity: 0.25;
+        }
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.7fr) minmax(320px, 0.9fr);
+        border-bottom: 1px solid var(--border-strong);
+      }
+
+      .hero-main,
+      .hero-side,
+      .stats-cell,
+      .chart-panel,
+      .diagnosis-panel {
+        padding: 20px;
+      }
+
+      .hero-side {
+        border-left: 1px solid var(--border-strong);
+        background: var(--surface-1);
+      }
+
+      .section-label {
+        margin: 0 0 14px;
+        font-size: 10px;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 14ch;
+        font-size: clamp(32px, 5vw, 64px);
+        line-height: 1.02;
+        font-weight: 700;
+      }
+
+      .hero-copy {
+        max-width: 58ch;
+        margin: 20px 0 0;
+        font-size: 14px;
+        line-height: 1.7;
+        color: var(--text-secondary);
+      }
+
+      .badge-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 24px;
+      }
+
+      .badge,
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 6px 9px;
+        border: 1px solid var(--border-strong);
+        font-size: 10px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+      }
+
+      .badge.filled {
+        background: var(--surface-3);
+        color: var(--text-primary);
+      }
+
+      .badge.outline,
+      .status-pill {
+        background: transparent;
+        color: var(--text-secondary);
+      }
+
+      .meta-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        margin-top: 24px;
+      }
+
+      .meta-label {
+        margin: 0 0 8px;
+        font-size: 10px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--text-muted);
+      }
+
+      .meta-value {
+        font-size: 26px;
+        color: var(--text-primary);
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        border-bottom: 1px solid var(--border-strong);
+      }
+
+      .stats-cell {
+        min-height: 158px;
+        border-right: 1px solid var(--border-strong);
+        background: var(--surface-2);
+      }
+
+      .stats-cell:last-child {
+        border-right: 0;
+      }
+
+      .stat-value {
+        margin-top: 18px;
+        font-size: clamp(24px, 3vw, 38px);
+        color: var(--text-primary);
+      }
+
+      .stat-copy {
+        margin-top: 14px;
+        font-size: 13px;
+        line-height: 1.6;
+        color: var(--text-secondary);
+      }
+
+      .severity-low {
+        border-color: var(--signal-ok);
+      }
+
+      .severity-medium {
+        border-color: var(--signal-warn);
+      }
+
+      .severity-high {
+        border-color: var(--signal-danger);
+      }
+
+      .bottom {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.85fr);
+      }
+
+      .chart-panel {
+        border-right: 1px solid var(--border-strong);
+      }
+
+      .chart-list {
+        margin-top: 18px;
+        border-top: 1px solid var(--border-soft);
+      }
+
+      .chart-row {
+        display: grid;
+        grid-template-columns: 110px 1fr 70px;
+        gap: 14px;
+        align-items: center;
+        min-height: 28px;
+        border-bottom: 1px solid var(--border-soft);
+        padding: 7px 0;
+      }
+
+      .block-id,
+      .percent {
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+
+      .bar-shell {
+        width: 100%;
+        height: 14px;
+        border: 1px solid var(--border-soft);
+        background: transparent;
+      }
+
+      .bar-fill {
+        height: 100%;
+        background: var(--bar-base);
+      }
+
+      .bar-fill.warn {
+        background: var(--bar-warn);
+      }
+
+      .bar-fill.danger {
+        background: var(--bar-danger);
+      }
+
+      .diagnosis-title {
+        margin: 18px 0 0;
+        font-size: 34px;
+        color: var(--text-primary);
+      }
+
+      .diagnosis-copy {
+        margin-top: 14px;
+        max-width: 40ch;
+        font-size: 14px;
+        line-height: 1.8;
+        color: var(--text-secondary);
+      }
+
+      .signal-table {
+        width: 100%;
+        margin-top: 28px;
+        border-collapse: collapse;
+      }
+
+      .signal-table td {
+        border-top: 1px solid var(--border-soft);
+        padding: 12px 0;
+        font-size: 13px;
+      }
+
+      .signal-table td:last-child {
+        text-align: right;
+        color: var(--text-primary);
+      }
+
+      @media (max-width: 1200px) {
+        .stats {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .stats-cell:nth-child(2n) {
+          border-right: 0;
+        }
+
+        .stats-cell:nth-child(n + 3) {
+          border-top: 1px solid var(--border-strong);
+        }
+      }
+
+      @media (max-width: 900px) {
+        .hero,
+        .bottom {
+          grid-template-columns: 1fr;
+        }
+
+        .hero-side,
+        .chart-panel {
+          border-left: 0;
+          border-right: 0;
+          border-top: 1px solid var(--border-strong);
+        }
+      }
+
+      @media (max-width: 700px) {
+        .stats {
+          grid-template-columns: 1fr;
+        }
+
+        .stats-cell {
+          border-right: 0;
+          border-top: 1px solid var(--border-strong);
+        }
+
+        .stats-cell:first-child {
+          border-top: 0;
+        }
+
+        .chart-row {
+          grid-template-columns: 84px 1fr 58px;
+          gap: 10px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <nav class="nav">
+        <div class="nav-tab">SpamGuard</div>
+        <div class="nav-tab">Monad testnet</div>
+        <div class="nav-tab status"><span class="dot"></span>Disconnected</div>
+      </nav>
+
+      <section class="hero">
+        <div class="hero-main">
+          <p class="section-label">Real-time spam detection</p>
+          <h1>Real-time spam MEV intelligence for Monad</h1>
+          <p class="hero-copy">
+            Observe spam pressure, gas abuse, and transaction anomalies in a single operational view.
+            This interface prioritizes dense signal visibility over visual ornament.
+          </p>
+          <div class="badge-row">
+            <span class="badge filled">Live monitoring</span>
+            <span class="badge outline">Powered by Category Labs model</span>
+          </div>
+        </div>
+
+        <aside class="hero-side">
+          <p class="section-label">Live status</p>
+          <div class="meta-grid">
+            <div>
+              <p class="meta-label">Latest block</p>
+              <div class="meta-value">84035784</div>
+            </div>
+            <div>
+              <p class="meta-label">Update time</p>
+              <div class="meta-value">16:02:52</div>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="stats">
+        <div class="stats-cell">
+          <p class="section-label">Current spam ratio</p>
+          <div class="stat-value">68.8%</div>
+          <p class="stat-copy">Elevated pressure</p>
+          <div style="margin-top: 16px">
+            <span class="status-pill severity-medium">Stable</span>
+          </div>
+        </div>
+        <div class="stats-cell">
+          <p class="section-label">Spam txs / total txs</p>
+          <div class="stat-value">8 / 20</div>
+          <p class="stat-copy">Observed spam candidates against total flow</p>
+          <div style="margin-top: 16px">
+            <span class="status-pill">Flow</span>
+          </div>
+        </div>
+        <div class="stats-cell">
+          <p class="section-label">Suggested gas floor</p>
+          <div class="stat-value">25.6 gwei</div>
+          <p class="stat-copy">Model-derived floor adjustment for current conditions</p>
+          <div style="margin-top: 16px">
+            <span class="status-pill">Model</span>
+          </div>
+        </div>
+        <div class="stats-cell">
+          <p class="section-label">Latest block</p>
+          <div class="stat-value">84035784</div>
+          <p class="stat-copy">Most recent analyzed block on Monad testnet</p>
+          <div style="margin-top: 16px">
+            <span class="status-pill">Explorer</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="bottom">
+        <div class="chart-panel">
+          <p class="section-label">Live block pressure</p>
+          <p style="margin: 0; font-size: 15px; color: var(--text-secondary)">
+            Spam ratio across the latest 30 blocks
+          </p>
+          <div id="chart-list" class="chart-list"></div>
+        </div>
+
+        <aside class="diagnosis-panel">
+          <p class="section-label">Network diagnosis</p>
+          <h2 class="diagnosis-title">Elevated</h2>
+          <p class="diagnosis-copy">
+            Spam activity remains above the normal operating range. Pressure is persistent but not yet in saturation territory. Continue monitoring before enforcing a higher floor globally.
+          </p>
+
+          <table class="signal-table">
+            <tbody>
+              <tr>
+                <td>Gas abuse index</td>
+                <td>0.68</td>
+              </tr>
+              <tr>
+                <td>Bundle saturation</td>
+                <td>Moderate</td>
+              </tr>
+              <tr>
+                <td>Anomaly score</td>
+                <td>74 / 100</td>
+              </tr>
+            </tbody>
+          </table>
+        </aside>
+      </section>
+    </div>
+
+    <script>
+      const blockSeries = [
+        { block: 84035755, ratio: 0.18 },
+        { block: 84035756, ratio: 0.26 },
+        { block: 84035757, ratio: 0.31 },
+        { block: 84035758, ratio: 0.22 },
+        { block: 84035759, ratio: 0.37 },
+        { block: 84035760, ratio: 0.41 },
+        { block: 84035761, ratio: 0.48 },
+        { block: 84035762, ratio: 0.52 },
+        { block: 84035763, ratio: 0.44 },
+        { block: 84035764, ratio: 0.39 },
+        { block: 84035765, ratio: 0.58 },
+        { block: 84035766, ratio: 0.62 },
+        { block: 84035767, ratio: 0.55 },
+        { block: 84035768, ratio: 0.67 },
+        { block: 84035769, ratio: 0.72 },
+        { block: 84035770, ratio: 0.61 },
+        { block: 84035771, ratio: 0.43 },
+        { block: 84035772, ratio: 0.36 },
+        { block: 84035773, ratio: 0.47 },
+        { block: 84035774, ratio: 0.51 },
+        { block: 84035775, ratio: 0.65 },
+        { block: 84035776, ratio: 0.78 },
+        { block: 84035777, ratio: 0.74 },
+        { block: 84035778, ratio: 0.69 },
+        { block: 84035779, ratio: 0.57 },
+        { block: 84035780, ratio: 0.63 },
+        { block: 84035781, ratio: 0.71 },
+        { block: 84035782, ratio: 0.66 },
+        { block: 84035783, ratio: 0.64 },
+        { block: 84035784, ratio: 0.688 }
+      ];
+
+      const root = document.getElementById("chart-list");
+
+      blockSeries.forEach((entry) => {
+        const row = document.createElement("div");
+        row.className = "chart-row";
+
+        const label = document.createElement("div");
+        label.className = "block-id";
+        label.textContent = entry.block;
+
+        const shell = document.createElement("div");
+        shell.className = "bar-shell";
+
+        const fill = document.createElement("div");
+        fill.className = "bar-fill";
+        if (entry.ratio > 0.75) {
+          fill.classList.add("danger");
+        } else if (entry.ratio > 0.6) {
+          fill.classList.add("warn");
+        }
+        fill.style.width = `${Math.max(2, entry.ratio * 100)}%`;
+
+        const value = document.createElement("div");
+        value.className = "percent";
+        value.textContent = `${(entry.ratio * 100).toFixed(1)}%`;
+
+        shell.appendChild(fill);
+        row.appendChild(label);
+        row.appendChild(shell);
+        row.appendChild(value);
+        root.appendChild(row);
+      });
+    </script>
+  </body>
+</html>

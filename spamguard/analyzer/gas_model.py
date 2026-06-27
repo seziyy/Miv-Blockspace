@@ -1,3 +1,4 @@
+import os
 from dataclasses import dataclass, field
 from statistics import median
 from typing import List, Optional
@@ -20,8 +21,8 @@ class CategoryLabsModel:
     beta: float = 6.0
     s: float = 20.0
     r0: float = 6000.0
-    target_spam_ratio: float = 0.15
-    baseline_floor_wei: int = 1_000_000
+    target_spam_ratio: float = field(default_factory=lambda: float(os.getenv("TARGET_SPAM_RATIO", "0.15")))
+    baseline_floor_wei: int = field(default_factory=lambda: int(os.getenv("BASELINE_FLOOR_WEI", "1000000")))
     default_block_capacity: int = 30_000_000
     calibration_history_size: int = 100
     spam_ratio_history: List[float] = field(default_factory=list)
@@ -111,7 +112,13 @@ class CategoryLabsModel:
 
     def compute_optimal_gas_floor(self, current_spam_ratio: float, block_capacity: int) -> int:
         self.calibrated_block_capacity = max(block_capacity, 1)
-        return self.suggest_gas_floor_to_hit_target(current_spam_ratio, self.target_spam_ratio)
+        if current_spam_ratio <= self.target_spam_ratio:
+            self.current_floor_wei = self.baseline_floor_wei
+            return self.baseline_floor_wei
+
+        suggested_floor = int(self.baseline_floor_wei * (current_spam_ratio / self.target_spam_ratio))
+        self.current_floor_wei = max(suggested_floor, self.baseline_floor_wei)
+        return self.current_floor_wei
 
     def compute_expected_spam_equilibrium(self, gas_floor_wei: int) -> float:
         self.current_floor_wei = max(gas_floor_wei, self.baseline_floor_wei)

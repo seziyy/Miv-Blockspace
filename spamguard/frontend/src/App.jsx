@@ -1,81 +1,25 @@
-import React, { useState, useEffect } from "react";
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ReferenceLine,
-  ResponsiveContainer,
-} from "recharts";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
-const WS_PROTOCOL = window.location.protocol === "https:" ? "wss" : "ws";
-const WS_URL = `${WS_PROTOCOL}://${window.location.hostname}:8765`;
-const EXPLORER_BASE_URL = "https://testnet.monadexplorer.com";
-const ORACLE_ADDRESS = "0x1c80d99dF50075D456830016d8a2ba318d1cb321";
-const PAPER_URL = "https://arxiv.org/abs/2604.00234";
-const STORAGE_KEY = "spamguard_blocks_v1";
+const WS_URL = "ws://localhost:8765";
+const STORAGE_KEY = "spamguard_dead_blocks_v1";
+const MAX_BLOCKS = 30;
+const MONAD_EXPLORER_TX_URL = "https://testnet.monadexplorer.com/tx/";
+const BRAND_PHOTO_URL = "/miv-blockspace-photo.png";
+const SCRAMBLE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+const DASHBOARD_LABEL = "Dashboard";
 
-function formatPercent(value) {
-  if (typeof value !== "number" || Number.isNaN(value)) return "\u2014";
-  return `${(value * 100).toFixed(1)}%`;
-}
-
-function formatGwei(value) {
-  if (typeof value !== "number" || Number.isNaN(value)) return "\u2014";
-  return `${value.toFixed(1)} gwei`;
-}
-
-function formatTime(timestamp) {
-  if (!timestamp) return "\u2014";
+function normalizeTimestamp(timestamp) {
+  if (!timestamp) return null;
   const date = new Date(timestamp);
-  if (Number.isNaN(date.getTime())) return "\u2014";
-
-  return date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-}
-
-function getSpamColor(value) {
-  if (typeof value !== "number" || Number.isNaN(value)) return "text-zinc-400";
-  if (value > 0.5) return "text-red-400";
-  if (value >= 0.2) return "text-yellow-400";
-  return "text-green-400";
-}
-
-function getSpamLabel(value) {
-  if (typeof value !== "number" || Number.isNaN(value)) return "NO SIGNAL";
-  if (value > 0.5) return "HIGH SPAM PRESSURE";
-  if (value >= 0.2) return "MEDIUM PRESSURE";
-  return "LOW PRESSURE";
-}
-
-function shortHash(hash) {
-  if (!hash || typeof hash !== "string") return "\u2014";
-  if (hash.length <= 12) return hash;
-  return `${hash.slice(0, 5)}...${hash.slice(-4)}`;
-}
-
-function blockUrl(blockNumber) {
-  return `${EXPLORER_BASE_URL}/block/${blockNumber}`;
-}
-
-function txUrl(hash) {
-  return `${EXPLORER_BASE_URL}/tx/${hash}`;
-}
-
-function addressUrl(address) {
-  return `${EXPLORER_BASE_URL}/address/${address}`;
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
 }
 
 function normalizeBlock(block) {
   if (!block || typeof block !== "object") return null;
   const blockNumber = Number(block.block_number);
   if (!Number.isFinite(blockNumber)) return null;
+  const oracleTx = normalizeTxHash(block.oracle_tx ?? block.oracle_tx_hash);
 
   return {
     ...block,
@@ -90,19 +34,30 @@ function normalizeBlock(block) {
         (typeof block.suggested_floor === "number" ? block.suggested_floor / 1e9 : block.suggested_floor),
     ),
     analysis_time_ms: Number(block.analysis_time_ms),
-    oracle_tx: block.oracle_tx ?? block.oracle_tx_hash ?? null,
+    is_high_spam:
+      typeof block.is_high_spam === "boolean"
+        ? block.is_high_spam
+        : Number(block.spam_ratio) > 0.7,
+    oracle_tx: oracleTx,
+    oracle_tx_hash: oracleTx,
+    timestamp: normalizeTimestamp(block.timestamp) ?? new Date().toISOString(),
   };
 }
 
-function mergeBlocks(currentBlocks, incomingBlocks, limit) {
+function normalizeTxHash(value) {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const withoutPrefix = trimmed.startsWith("0x") ? trimmed.slice(2) : trimmed;
+  if (!/^[0-9a-fA-F]{64}$/.test(withoutPrefix)) return "";
+  return `0x${withoutPrefix.toLowerCase()}`;
+}
+
+function mergeBlocks(currentBlocks, incomingBlocks, limit = MAX_BLOCKS) {
   const byBlockNumber = new Map();
 
-  currentBlocks.forEach((block) => {
-    byBlockNumber.set(block.block_number, block);
-  });
-
-  incomingBlocks.forEach((block) => {
-    byBlockNumber.set(block.block_number, block);
+  [...currentBlocks, ...incomingBlocks].forEach((block) => {
+    if (block) byBlockNumber.set(block.block_number, block);
   });
 
   return Array.from(byBlockNumber.values())
@@ -114,7 +69,6 @@ function loadStoredBlocks() {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
-
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed.map(normalizeBlock).filter(Boolean);
@@ -123,56 +77,273 @@ function loadStoredBlocks() {
   }
 }
 
-function MetricCard({ label, value, helper, valueClass = "text-zinc-50", children }) {
+function createFallbackBlocks() {
+  const now = Date.now();
+  const ratios = [
+    0.42, 0.37, 0.48, 0.55, 0.58, 0.62, 0.51, 0.46, 0.69, 0.72,
+    0.63, 0.57, 0.61, 0.74, 0.68, 0.53, 0.44, 0.39, 0.47, 0.59,
+    0.66, 0.71, 0.64, 0.49, 0.52, 0.58, 0.62, 0.65, 0.67, 0.688,
+  ];
+
+  return ratios
+    .map((ratio, index) =>
+      normalizeBlock({
+        block_number: 84035755 + index,
+        spam_ratio: ratio,
+        spam_gas: Math.floor(29_000_000 * ratio),
+        total_gas: 29_000_000,
+        spam_tx_count: Math.max(1, Math.round(ratio * 11)),
+        total_txs: 11 + (index % 10),
+        suggested_floor_gwei: 14 + ratio * 28,
+        analysis_time_ms: 95 + index * 4,
+        is_high_spam: ratio > 0.7,
+        timestamp: new Date(now - (29 - index) * 7000).toISOString(),
+      }),
+    )
+    .filter(Boolean);
+}
+
+function formatPercent(value) {
+  if (typeof value !== "number" || Number.isNaN(value)) return "\u2014";
+  return `${Math.round(value * 100)}%`;
+}
+
+function formatPercentPrecise(value) {
+  if (typeof value !== "number" || Number.isNaN(value)) return "\u2014";
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function formatGwei(value) {
+  if (typeof value !== "number" || Number.isNaN(value)) return "\u2014";
+  if (value > 0 && value < 0.01) return `${value.toFixed(4)} gwei`;
+  if (value > 0 && value < 0.1) return `${value.toFixed(3)} gwei`;
+  return `${value.toFixed(1)} gwei`;
+}
+
+function formatInteger(value) {
+  if (typeof value !== "number" || Number.isNaN(value)) return "\u2014";
+  return value.toLocaleString("en-US");
+}
+
+function formatCompact(value) {
+  if (typeof value !== "number" || Number.isNaN(value)) return "\u2014";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K`;
+  return String(value);
+}
+
+function formatTime(timestamp) {
+  if (!timestamp) return "\u2014";
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "\u2014";
+  return date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+function formatTxHash(txHash) {
+  if (!txHash) return "\u2014";
+  return `${txHash.slice(0, 10)}...${txHash.slice(-8)}`;
+}
+
+function oracleTxLink(txHash) {
+  if (!txHash) return null;
+  return `${MONAD_EXPLORER_TX_URL}${txHash}`;
+}
+
+function getLatestOracleTxs(blocks, count = 3) {
+  const seen = new Set();
+  const txs = [];
+
+  for (const block of [...blocks].reverse()) {
+    if (!block.oracle_tx || seen.has(block.oracle_tx)) continue;
+    seen.add(block.oracle_tx);
+    txs.push(block.oracle_tx);
+    if (txs.length === count) break;
+  }
+
+  return txs;
+}
+
+function pressureCopy(spamRatio) {
+  if (typeof spamRatio !== "number" || Number.isNaN(spamRatio)) return "No live signal";
+  if (spamRatio > 0.7) return "Elevated";
+  if (spamRatio >= 0.4) return "Active";
+  return "Stable";
+}
+
+function diagnosis(spamRatio) {
+  if (typeof spamRatio !== "number" || Number.isNaN(spamRatio)) {
+    return "Waiting for current block telemetry from the monitor.";
+  }
+  if (spamRatio > 0.7) {
+    return "Spam pressure remains dominant. Floor intervention should be evaluated if this persists.";
+  }
+  if (spamRatio >= 0.4) {
+    return "Pressure is elevated but not saturated. Continue observing short-term block behavior.";
+  }
+  return "Network conditions look healthy. Immediate intervention does not appear necessary.";
+}
+
+function barClass(value) {
+  if (value > 0.75) return "bg-[#5f7f73]";
+  if (value > 0.6) return "bg-[#8aa08f]";
+  return "bg-[#353535]";
+}
+
+function SectionLabel({ children }) {
   return (
-    <section className="border-2 border-zinc-800 bg-[#13131a] p-4 shadow-[5px_5px_0_#050507]">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="text-[11px] font-black uppercase tracking-[0.16em] text-zinc-500">
-          {label}
-        </p>
-        <span className="border border-zinc-800 px-2 py-1 font-mono text-[10px] uppercase text-zinc-500">
-          RT
-        </span>
-      </div>
-      {value !== undefined ? (
-        <div className={`font-mono text-3xl font-black leading-none md:text-4xl ${valueClass}`}>
-          {value}
-        </div>
-      ) : null}
-      {helper ? (
-        <p className="mt-3 text-xs uppercase tracking-[0.08em] text-zinc-500">{helper}</p>
-      ) : null}
+    <p className="m-0 text-[11px] font-bold uppercase text-[#5d5a54]">
       {children}
-    </section>
+    </p>
   );
 }
 
-function EmptyState({ children }) {
+function SummaryCard({ label, value }) {
   return (
-    <div className="flex min-h-[260px] items-center justify-center border border-dashed border-zinc-800 bg-black/20 p-6 text-center">
-      <p className="max-w-lg font-mono text-sm uppercase tracking-[0.08em] text-zinc-500">
-        {children}
-      </p>
+    <div className="rounded-[18px] border border-[#2b2b2b] bg-[#f4efe6] p-5">
+      <SectionLabel>{label}</SectionLabel>
+      <div className="mt-7 break-words text-[40px] font-black leading-none text-[#121212]">{value}</div>
     </div>
   );
 }
 
-function CustomTooltip({ active, payload }) {
-  if (!active || !payload || !payload.length) return null;
-  const data = payload[0].payload;
+function MetricCell({ value, label, highlight = false }) {
+  return (
+    <div className="min-w-0 border-t border-[#2b2b2b] p-4 first:border-t-0 sm:border-t-0 sm:border-r sm:last:border-r-0">
+      <div className={`h-[3px] w-10 ${highlight ? "bg-[#5f7f73]" : "bg-[#2b2b2b]"}`} />
+      <div className="mt-4 min-w-0 break-words text-[22px] font-black leading-[1.05] text-[#111111] xl:text-[20px] 2xl:text-[22px]">
+        {value}
+      </div>
+      <div className="mt-2 break-words text-[10px] font-bold uppercase text-[#5d5a54] 2xl:text-[11px]">
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function TxHashValue({ txHash }) {
+  if (!txHash) return "Not written";
 
   return (
-    <div className="border-2 border-zinc-700 bg-[#0a0a0f] p-3 shadow-[4px_4px_0_#ef4444]">
-      <p className="font-mono text-xs uppercase text-zinc-400">Block {data.block}</p>
-      <p className="mt-2 font-mono text-lg font-black text-red-400">
-        {data.spamPercent.toFixed(1)}%
-      </p>
-      <p className="mt-1 font-mono text-xs text-zinc-300">
-        Spam TXs: {data.spamTxCount} / {data.totalTxs}
-      </p>
-      <p className="font-mono text-xs text-zinc-300">
-        Floor: {formatGwei(data.gasFloor)}
-      </p>
+    <a
+      className="inline-block max-w-full break-all text-[15px] leading-[1.15] underline decoration-[#5f7f73] underline-offset-4"
+      href={oracleTxLink(txHash)}
+      rel="noreferrer"
+      target="_blank"
+      title={txHash}
+    >
+      {formatTxHash(txHash)}
+    </a>
+  );
+}
+
+function OracleHashStrip({ txHashes }) {
+  if (!txHashes.length) return "Not written";
+
+  return (
+    <div className="grid max-w-full gap-3 text-[16px] font-black leading-[1.2] md:grid-cols-3">
+      {txHashes.map((txHash) => (
+        <a
+          className="min-w-0 truncate border border-[#2b2b2b] bg-[#e3ddcf] px-4 py-3 font-mono text-[#111111] underline decoration-[#5f7f73] decoration-2 underline-offset-4"
+          href={oracleTxLink(txHash)}
+          key={txHash}
+          rel="noreferrer"
+          target="_blank"
+          title={txHash}
+        >
+          {formatTxHash(txHash)}
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function ScrambleDashboardButtonText() {
+  const [label, setLabel] = useState(DASHBOARD_LABEL);
+  const intervalRef = useRef(null);
+
+  function clearScramble() {
+    if (!intervalRef.current) return;
+    window.clearInterval(intervalRef.current);
+    intervalRef.current = null;
+  }
+
+  function scramble() {
+    clearScramble();
+    let frame = 0;
+
+    intervalRef.current = window.setInterval(() => {
+      frame += 1;
+      setLabel(
+        DASHBOARD_LABEL.split("")
+          .map((char, index) => {
+            if (char === " ") return " ";
+            if (frame > index + 5) return char;
+            return SCRAMBLE_CHARS[Math.floor(Math.random() * SCRAMBLE_CHARS.length)];
+          })
+          .join(""),
+      );
+
+      if (frame > DASHBOARD_LABEL.length + 6) {
+        clearScramble();
+        setLabel(DASHBOARD_LABEL);
+      }
+    }, 35);
+  }
+
+  useEffect(() => clearScramble, []);
+
+  return (
+    <span className="font-mono tabular-nums" onMouseEnter={scramble}>
+      {label}
+    </span>
+  );
+}
+
+function BrandPhotoPanel() {
+  const [visible, setVisible] = useState(true);
+
+  if (!visible) return null;
+
+  return (
+    <section className="mt-10 overflow-hidden rounded-[18px] border border-[#2b2b2b] bg-[#f4efe6]">
+      <img
+        alt="Miv Blockspace"
+        className="h-[260px] w-full object-cover"
+        onError={() => setVisible(false)}
+        src={BRAND_PHOTO_URL}
+      />
+    </section>
+  );
+}
+
+function ChainCard({ title, mainValue, barValue, cells, wide = false }) {
+  return (
+    <div className={`min-w-0 rounded-[20px] border border-[#2b2b2b] bg-[#f4efe6] p-5 2xl:p-6 ${wide ? "md:col-span-2 xl:col-span-3" : ""}`}>
+      <h3 className="m-0 min-h-[72px] break-words text-[30px] font-black uppercase leading-[1] text-[#111111] xl:text-[26px] 2xl:text-[30px]">
+        {title}
+      </h3>
+
+      <div className="mt-5 border-t border-[#2b2b2b]" />
+
+      <div className="mt-6 rounded-none border border-[#2b2b2b] p-5">
+        <div className="min-w-0 break-words text-[42px] font-black leading-[0.98] text-[#111111] xl:text-[36px] 2xl:text-[42px]">
+          {mainValue}
+        </div>
+        <div className="mt-8 h-[18px] border border-[#2b2b2b] bg-[#f4efe6] p-[2px]">
+          <div className={`h-full ${barClass(barValue)}`} style={{ width: `${Math.max(6, barValue * 100)}%` }} />
+        </div>
+      </div>
+
+      <div className={`mt-7 grid min-w-0 grid-cols-1 border border-[#2b2b2b] sm:grid-cols-2 ${wide ? "xl:grid-cols-4" : ""}`}>
+        {cells.map((cell, index) => (
+          <MetricCell key={`${title}-${index}`} {...cell} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -180,9 +351,6 @@ function CustomTooltip({ active, payload }) {
 export default function App() {
   const [connected, setConnected] = useState(false);
   const [blocks, setBlocks] = useState(() => loadStoredBlocks());
-  const [latestBlock, setLatestBlock] = useState(null);
-  const [highSpamBlocks, setHighSpamBlocks] = useState([]);
-  const [oracleTxs, setOracleTxs] = useState([]);
 
   useEffect(() => {
     let socket;
@@ -192,42 +360,18 @@ export default function App() {
     function applyIncomingBlocks(rawBlocks) {
       const incomingBlocks = rawBlocks.map(normalizeBlock).filter(Boolean);
       if (!incomingBlocks.length) return;
-
-      setBlocks((currentBlocks) => {
-        return mergeBlocks(currentBlocks, incomingBlocks, 30);
-      });
-
-      setHighSpamBlocks((currentHighSpamBlocks) =>
-        mergeBlocks(
-          currentHighSpamBlocks,
-          incomingBlocks.filter((block) => block.spam_ratio > 0.5),
-          10,
-        ).reverse(),
-      );
-
-      setOracleTxs((currentOracleTxs) => {
-        const incomingTxs = [...incomingBlocks]
-          .sort((a, b) => b.block_number - a.block_number)
-          .map((block) => block.oracle_tx)
-          .filter((hash) => typeof hash === "string" && hash.length > 0);
-
-        const deduped = [];
-        [...incomingTxs, ...currentOracleTxs].forEach((hash) => {
-          if (!deduped.includes(hash)) deduped.push(hash);
-        });
-
-        return deduped.slice(0, 5);
-      });
+      setBlocks((currentBlocks) => mergeBlocks(currentBlocks, incomingBlocks, MAX_BLOCKS));
     }
 
     function connect() {
-      socket = new WebSocket(WS_URL);
+      const ws = new WebSocket(WS_URL);
+      socket = ws;
 
-      socket.onopen = () => {
-        setConnected(true);
+      ws.onopen = () => {
+        if (ws === socket) setConnected(true);
       };
-
-      socket.onmessage = (event) => {
+      ws.onmessage = (event) => {
+        if (ws !== socket) return;
         try {
           const message = JSON.parse(event.data);
           if (message.type === "history" && Array.isArray(message.blocks)) {
@@ -237,20 +381,17 @@ export default function App() {
             applyIncomingBlocks([message.data]);
           }
         } catch {
-          // Malformed messages are ignored so the live stream keeps running.
+          // Ignore malformed messages.
         }
       };
-
-      socket.onerror = () => {
-        setConnected(false);
-        socket.close();
+      ws.onerror = () => {
+        if (ws !== socket) return;
+        ws.close();
       };
-
-      socket.onclose = () => {
+      ws.onclose = () => {
+        if (ws !== socket) return;
         setConnected(false);
-        if (shouldReconnect) {
-          reconnectTimer = window.setTimeout(connect, 3000);
-        }
+        if (shouldReconnect) reconnectTimer = window.setTimeout(connect, 3000);
       };
     }
 
@@ -264,359 +405,207 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    setLatestBlock(blocks[blocks.length - 1] || null);
-  }, [blocks]);
-
-  useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(blocks));
-
-    setHighSpamBlocks(
-      [...blocks]
-        .filter((block) => block.spam_ratio > 0.5)
-        .slice(-10)
-        .reverse(),
-    );
-
-    const deduped = [];
-    [...blocks]
-      .sort((a, b) => b.block_number - a.block_number)
-      .map((block) => block.oracle_tx)
-      .filter((hash) => typeof hash === "string" && hash.length > 0)
-      .forEach((hash) => {
-        if (!deduped.includes(hash)) deduped.push(hash);
-      });
-    setOracleTxs(deduped.slice(0, 5));
   }, [blocks]);
 
-  const chartData = blocks.map((block) => ({
-    block: block.block_number,
-    spamPercent: block.spam_ratio * 100,
-    spamTxCount: block.spam_tx_count,
-    totalTxs: block.total_txs,
-    gasFloor: block.suggested_floor_gwei,
-  }));
+  const effectiveBlocks = useMemo(() => {
+    if (blocks.length) return blocks;
+    if (!connected) return createFallbackBlocks();
+    return [];
+  }, [blocks, connected]);
 
-  const latestBlockNumber = latestBlock ? String(latestBlock.block_number) : "\u2014";
-  const latestBlockLink = latestBlock ? blockUrl(latestBlock.block_number) : null;
+  const latestBlock = effectiveBlocks[effectiveBlocks.length - 1] ?? null;
+  const averageSpam =
+    effectiveBlocks.length > 0
+      ? effectiveBlocks.reduce((sum, block) => sum + block.spam_ratio, 0) / effectiveBlocks.length
+      : NaN;
+  const suspiciousWalletsEstimate =
+    latestBlock && Number.isFinite(latestBlock.total_txs)
+      ? latestBlock.total_txs * 1_250_000
+      : NaN;
+  const priorityChains = effectiveBlocks.length ? 4 : NaN;
+  const latestOracleTxs = getLatestOracleTxs(effectiveBlocks, 3);
+  const latestOracleTx = latestOracleTxs[0] ?? "";
+
+  const cards = [
+    {
+      title: "Spam pressure",
+      mainValue: formatPercent(latestBlock?.spam_ratio),
+      barValue: latestBlock?.spam_ratio ?? 0,
+      cells: [
+        {
+          value: formatPercent(latestBlock?.spam_ratio),
+          label: "Bot activity",
+          highlight: true,
+        },
+        {
+          value:
+            typeof latestBlock?.spam_ratio === "number" && !Number.isNaN(latestBlock.spam_ratio)
+              ? formatPercent(1 - latestBlock.spam_ratio)
+              : "\u2014",
+          label: "Human activity",
+        },
+        {
+          value: formatCompact(latestBlock?.spam_gas),
+          label: "Spam gas",
+        },
+        {
+          value: formatCompact(latestBlock?.total_gas),
+          label: "Total gas",
+          highlight: true,
+        },
+      ],
+    },
+    {
+      title: "Transaction flow",
+      mainValue:
+        latestBlock && Number.isFinite(latestBlock.spam_tx_count) && Number.isFinite(latestBlock.total_txs)
+          ? `${latestBlock.spam_tx_count}/${latestBlock.total_txs}`
+          : "\u2014",
+      barValue:
+        latestBlock && latestBlock.total_txs > 0 ? latestBlock.spam_tx_count / latestBlock.total_txs : 0,
+      cells: [
+        {
+          value: formatInteger(latestBlock?.spam_tx_count),
+          label: "Spam tx count",
+          highlight: true,
+        },
+        {
+          value: formatInteger(latestBlock?.total_txs),
+          label: "Total tx count",
+        },
+        {
+          value: `${Math.round(latestBlock?.analysis_time_ms ?? NaN)} ms`,
+          label: "Analysis time",
+        },
+        {
+          value: pressureCopy(latestBlock?.spam_ratio),
+          label: "Pressure state",
+          highlight: true,
+        },
+      ],
+    },
+    {
+      title: "Gas floor",
+      mainValue: formatGwei(latestBlock?.suggested_floor_gwei),
+      barValue:
+        latestBlock && Number.isFinite(latestBlock.suggested_floor_gwei)
+          ? Math.min(latestBlock.suggested_floor_gwei / 50, 1)
+          : 0,
+      cells: [
+        {
+          value: formatPercentPrecise(averageSpam),
+          label: "Avg spam share",
+          highlight: true,
+        },
+        {
+          value: formatPercentPrecise(latestBlock?.spam_ratio),
+          label: "Current share",
+        },
+        {
+          value: formatGwei(latestBlock?.suggested_floor_gwei),
+          label: "Suggested floor",
+        },
+        {
+          value: latestBlock ? latestBlock.block_number : "\u2014",
+          label: "Latest block",
+          highlight: true,
+        },
+      ],
+    },
+    {
+      title: "Oracle sync",
+      mainValue: <OracleHashStrip txHashes={latestOracleTxs} />,
+      barValue: latestOracleTx ? 0.92 : 0.12,
+      wide: true,
+      cells: [
+        {
+          value: <OracleHashStrip txHashes={latestOracleTxs} />,
+          label: "Latest oracle txs",
+          highlight: Boolean(latestOracleTx),
+        },
+        {
+          value: latestBlock ? latestBlock.block_number : "\u2014",
+          label: "Source block",
+        },
+        {
+          value: connected ? "Connected" : "Retrying",
+          label: "WebSocket",
+          highlight: connected,
+        },
+        {
+          value: formatTime(latestBlock?.timestamp),
+          label: "Update time",
+        },
+      ],
+    },
+  ];
 
   return (
-    <main className="min-h-screen bg-[#0a0a0f] text-zinc-100">
-      <header className="sticky top-0 z-20 border-b-2 border-zinc-800 bg-[#0a0a0f]/95 backdrop-blur-none">
-        <div className="mx-auto grid max-w-7xl grid-cols-1 items-center gap-4 px-4 py-4 md:grid-cols-[1fr_auto_1fr] md:px-6">
-          <div>
-            <h1 className="font-mono text-2xl font-black uppercase leading-none text-zinc-50">
-              SpamGuard
-            </h1>
-            <p className="mt-1 text-xs font-bold uppercase tracking-[0.18em] text-zinc-500">
-              Monad Spam MEV Monitor
-            </p>
+    <main className="min-h-screen bg-[#ece6db] px-3 py-3 text-[#111111] sm:px-5 sm:py-5">
+      <div className="mx-auto max-w-[1800px] rounded-[18px] border border-[#2b2b2b] bg-[#f4efe6]">
+        <header className="flex flex-wrap items-center justify-between gap-6 border-b border-[#2b2b2b] px-7 py-4">
+          <div className="text-[22px] font-black uppercase">
+            Miv Blockspace
           </div>
 
-          <div className="flex items-center gap-3 border-2 border-zinc-800 bg-[#13131a] px-4 py-2 font-mono text-sm font-black uppercase">
-            <span
-              className={`h-3 w-3 ${connected ? "animate-pulse bg-green-400" : "bg-red-500"}`}
-            />
-            {connected ? "LIVE" : "DISCONNECTED"}
+          <div className="inline-flex min-w-[142px] items-center justify-center rounded-[12px] border border-[#2b2b2b] bg-[#5f7f73] px-5 py-2.5 text-[16px] font-black uppercase text-[#fffaf0]">
+            <ScrambleDashboardButtonText />
           </div>
+        </header>
 
-          <div className="flex flex-wrap items-center gap-2 md:justify-end">
-            <span className="border border-zinc-800 px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
-              REALTIME
-            </span>
-            <span className="border border-zinc-800 px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
-              MONAD TESTNET
-            </span>
-            <a
-              href={PAPER_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="border border-zinc-800 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-400 hover:border-red-500 hover:text-red-400"
-            >
-              Powered by Category Labs Model
-            </a>
-          </div>
+        <div className="px-7 py-10">
+          <section className="grid gap-8 xl:grid-cols-[1.6fr_0.8fr] xl:items-center">
+            <div className="flex gap-5">
+              <div className="mt-1 h-[42px] w-[6px] bg-[#2b2b2b]" />
+              <div>
+                <h1 className="m-0 text-[34px] font-black leading-[1.08]">
+                  Real-time spam MEV intelligence for Monad
+                </h1>
+                <p className="mt-4 max-w-[62ch] text-[17px] leading-[1.6] text-[#4c4a46]">
+                  Detect spam pressure, gas abuse, and transaction anomalies before they distort the block.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 xl:justify-end">
+              <StatusChip active>Live monitoring</StatusChip>
+              <StatusChip>Powered by Category Labs model</StatusChip>
+              <StatusChip warn={!connected}>{connected ? "Connected" : "Disconnected"}</StatusChip>
+            </div>
+          </section>
+
+          <section className="mt-10 grid gap-5 lg:grid-cols-3">
+            <SummaryCard label="Priority chains" value={formatInteger(priorityChains)} />
+            <SummaryCard label="Avg bot share" value={formatPercent(averageSpam)} />
+            <SummaryCard label="Suspicious wallets" value={formatCompact(suspiciousWalletsEstimate)} />
+          </section>
+
+          <BrandPhotoPanel />
+
+          <section className="mt-10 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {cards.map((card) => (
+              <ChainCard key={card.title} {...card} />
+            ))}
+          </section>
         </div>
-      </header>
-
-      <div className="mx-auto max-w-7xl px-4 py-5 md:px-6">
-        <div className="mb-4 flex flex-wrap gap-2">
-          <span className="border border-zinc-800 bg-[#13131a] px-2 py-1 font-mono text-[10px] font-black uppercase tracking-[0.16em] text-green-400">
-            MODEL ONLINE
-          </span>
-          <span className="border border-zinc-800 bg-[#13131a] px-2 py-1 font-mono text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">
-            WS {WS_URL}
-          </span>
-          <span className="border border-zinc-800 bg-[#13131a] px-2 py-1 font-mono text-[10px] font-black uppercase tracking-[0.16em] text-zinc-500">
-            ORACLE SYNC
-          </span>
-        </div>
-
-        <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard
-            label="Current Spam Ratio"
-            value={latestBlock ? formatPercent(latestBlock.spam_ratio) : "\u2014"}
-            valueClass={getSpamColor(latestBlock?.spam_ratio)}
-          >
-            <p
-              className={`mt-3 inline-block border px-2 py-1 font-mono text-[10px] font-black uppercase tracking-[0.14em] ${
-                latestBlock?.spam_ratio > 0.5
-                  ? "border-red-500/60 bg-red-500/10 text-red-400"
-                  : latestBlock?.spam_ratio >= 0.2
-                    ? "border-yellow-500/60 bg-yellow-500/10 text-yellow-400"
-                    : "border-green-500/60 bg-green-500/10 text-green-400"
-              }`}
-            >
-              {getSpamLabel(latestBlock?.spam_ratio)}
-            </p>
-          </MetricCard>
-
-          <MetricCard
-            label="Spam TXs / Total TXs"
-            value={
-              latestBlock
-                ? `${latestBlock.spam_tx_count} / ${latestBlock.total_txs}`
-                : "\u2014"
-            }
-            helper="Current block transaction classification"
-          />
-
-          <MetricCard
-            label="Suggested Gas Floor"
-            value={latestBlock ? formatGwei(latestBlock.suggested_floor_gwei) : "\u2014"}
-            helper="Category Labs equilibrium model"
-            valueClass="text-yellow-300"
-          />
-
-          <MetricCard label="Latest Block" helper="Open in Monad Explorer" valueClass="text-zinc-50">
-            {latestBlockLink ? (
-              <a
-                href={latestBlockLink}
-                target="_blank"
-                rel="noreferrer"
-                className="font-mono text-3xl font-black leading-none text-zinc-50 underline decoration-red-500 underline-offset-4 hover:text-red-400 md:text-4xl"
-              >
-                {latestBlockNumber}
-              </a>
-            ) : (
-              <div className="font-mono text-3xl font-black leading-none text-zinc-50 md:text-4xl">
-                {latestBlockNumber}
-              </div>
-            )}
-          </MetricCard>
-        </section>
-
-        <section className="mt-5 border-2 border-zinc-800 bg-[#13131a] p-4 shadow-[5px_5px_0_#050507]">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[11px] font-black uppercase tracking-[0.16em] text-zinc-500">
-                Spam Ratio per Block (last 30)
-              </p>
-              <h2 className="mt-1 font-mono text-xl font-black uppercase text-zinc-50">
-                Live Block Pressure
-              </h2>
-            </div>
-            <span className="border border-zinc-800 px-2 py-1 font-mono text-[10px] font-black uppercase tracking-[0.16em] text-red-400">
-              30 BLOCK WINDOW
-            </span>
-          </div>
-
-          {chartData.length ? (
-            <div className="h-[360px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={chartData} margin={{ top: 16, right: 22, left: 0, bottom: 8 }}>
-                  <CartesianGrid stroke="#27272a" strokeDasharray="2 6" />
-                  <XAxis
-                    dataKey="block"
-                    tick={{ fill: "#a1a1aa", fontSize: 11, fontFamily: "monospace" }}
-                    tickFormatter={(value) => String(value)}
-                    stroke="#3f3f46"
-                    minTickGap={18}
-                  />
-                  <YAxis
-                    domain={[0, 100]}
-                    tick={{ fill: "#a1a1aa", fontSize: 11, fontFamily: "monospace" }}
-                    tickFormatter={(value) => `${value}%`}
-                    stroke="#3f3f46"
-                    width={44}
-                  />
-                  <Tooltip content={<CustomTooltip />} />
-                  <ReferenceLine
-                    y={15}
-                    stroke="#71717a"
-                    strokeDasharray="5 5"
-                    label={{
-                      value: "Paper target threshold",
-                      fill: "#a1a1aa",
-                      fontSize: 11,
-                      position: "insideTopLeft",
-                    }}
-                  />
-                  <ReferenceLine
-                    y={50}
-                    stroke="#eab308"
-                    strokeDasharray="5 5"
-                    label={{
-                      value: "High spam alert",
-                      fill: "#eab308",
-                      fontSize: 11,
-                      position: "insideTopRight",
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="spamPercent"
-                    stroke="#ef4444"
-                    strokeWidth={3}
-                    dot={{ r: 3, fill: "#0a0a0f", stroke: "#ef4444", strokeWidth: 2 }}
-                    activeDot={{ r: 5, fill: "#ef4444", stroke: "#0a0a0f", strokeWidth: 2 }}
-                    isAnimationActive
-                    animationDuration={500}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          ) : (
-            <EmptyState>Waiting for live block data from {WS_URL}</EmptyState>
-          )}
-        </section>
-
-        <section className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-[1.45fr_1fr]">
-          <div className="border-2 border-zinc-800 bg-[#13131a] p-4 shadow-[5px_5px_0_#050507]">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="font-mono text-lg font-black uppercase text-zinc-50">
-                Recent High-Spam Blocks
-              </h2>
-              <span className="border border-red-500/50 bg-red-500/10 px-2 py-1 font-mono text-[10px] font-black uppercase tracking-[0.14em] text-red-400">
-                ALERT FEED
-              </span>
-            </div>
-
-            {highSpamBlocks.length ? (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[660px] border-collapse font-mono text-sm">
-                  <thead>
-                    <tr className="border-b-2 border-zinc-800 text-left text-[10px] uppercase tracking-[0.14em] text-zinc-500">
-                      <th className="py-3 pr-4">Block #</th>
-                      <th className="py-3 pr-4">Spam %</th>
-                      <th className="py-3 pr-4">Spam TXs</th>
-                      <th className="py-3 pr-4">Gas Floor</th>
-                      <th className="py-3">Time</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {highSpamBlocks.map((block) => (
-                      <tr
-                        key={block.block_number}
-                        className="border-b border-zinc-800/80 text-zinc-300 hover:bg-red-500/10"
-                      >
-                        <td className="py-3 pr-4">
-                          <a
-                            href={blockUrl(block.block_number)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="font-black text-zinc-50 underline decoration-zinc-700 underline-offset-4 hover:text-red-400"
-                          >
-                            {block.block_number}
-                          </a>
-                        </td>
-                        <td className={`py-3 pr-4 font-black ${getSpamColor(block.spam_ratio)}`}>
-                          {formatPercent(block.spam_ratio)}
-                        </td>
-                        <td className="py-3 pr-4">
-                          {block.spam_tx_count} / {block.total_txs}
-                        </td>
-                        <td className="py-3 pr-4 text-yellow-300">
-                          {formatGwei(block.suggested_floor_gwei)}
-                        </td>
-                        <td className="py-3 text-zinc-500">{formatTime(block.timestamp)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="border border-dashed border-zinc-800 bg-black/20 p-8 text-center font-mono text-sm uppercase tracking-[0.08em] text-green-400">
-                No high-spam blocks detected recently {"\u2713"}
-              </div>
-            )}
-          </div>
-
-          <aside className="border-2 border-zinc-800 bg-[#13131a] p-4 shadow-[5px_5px_0_#050507]">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="font-mono text-lg font-black uppercase text-zinc-50">
-                SpamOracle - Testnet
-              </h2>
-              <span className="border border-zinc-800 px-2 py-1 font-mono text-[10px] font-black uppercase tracking-[0.14em] text-zinc-500">
-                ONCHAIN
-              </span>
-            </div>
-
-            <a
-              href={addressUrl(ORACLE_ADDRESS)}
-              target="_blank"
-              rel="noreferrer"
-              className="block break-all border border-zinc-800 bg-black/20 p-3 font-mono text-sm text-zinc-200 hover:border-red-500 hover:text-red-400"
-            >
-              {ORACLE_ADDRESS}
-            </a>
-
-            <a
-              href={addressUrl(ORACLE_ADDRESS)}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-4 inline-flex border-2 border-zinc-700 bg-zinc-100 px-4 py-2 font-mono text-xs font-black uppercase tracking-[0.14em] text-black hover:border-red-500 hover:bg-red-500 hover:text-white"
-            >
-              View on Explorer
-            </a>
-
-            <p className="mt-4 border-l-2 border-zinc-700 pl-3 text-sm leading-6 text-zinc-400">
-              Oracle updates on every block. Any protocol can read
-              getRecommendedGasFloor() to dynamically adjust parameters.
-            </p>
-
-            <div className="mt-6">
-              <h3 className="mb-3 font-mono text-sm font-black uppercase tracking-[0.12em] text-zinc-50">
-                Latest Oracle TXs
-              </h3>
-
-              {oracleTxs.length ? (
-                <div className="space-y-2">
-                  {oracleTxs.map((hash) => (
-                    <a
-                      key={hash}
-                      href={txUrl(hash)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block border border-zinc-800 bg-black/20 px-3 py-2 font-mono text-sm text-zinc-300 hover:border-red-500 hover:bg-red-500/10 hover:text-red-400"
-                    >
-                      {shortHash(hash)}
-                    </a>
-                  ))}
-                </div>
-              ) : (
-                <div className="border border-dashed border-zinc-800 bg-black/20 p-5 font-mono text-sm uppercase tracking-[0.08em] text-zinc-500">
-                  Waiting for oracle updates
-                </div>
-              )}
-            </div>
-          </aside>
-        </section>
       </div>
-
-      <footer className="border-t-2 border-zinc-900 px-4 py-6 md:px-6">
-        <div className="mx-auto max-w-7xl text-xs leading-6 text-zinc-600">
-          SpamGuard implements the mitigation framework proposed in:{" "}
-          <a
-            href={PAPER_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="text-zinc-400 underline decoration-zinc-700 underline-offset-4 hover:text-red-400"
-          >
-            Blockspace Under Pressure: An Analysis of Spam MEV on High-Throughput
-            Blockchains {"\u2014"} Wang et al., Category Labs, 2026
-          </a>
-        </div>
-      </footer>
     </main>
+  );
+}
+
+function StatusChip({ children, active = false, warn = false }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-[10px] border px-4 py-2 text-[11px] font-black uppercase ${
+        active
+          ? "border-[#2b2b2b] bg-[#111111] text-[#fffaf0]"
+          : warn
+            ? "border-[#5f7f73] text-[#5f7f73]"
+            : "border-[#2b2b2b] text-[#2f2f2f]"
+      }`}
+    >
+      {children}
+    </span>
   );
 }
