@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import os
@@ -8,7 +7,6 @@ from typing import Any, Dict
 
 from dotenv import load_dotenv
 from web3 import Web3
-import websockets
 
 from gas_model import CategoryLabsModel
 from spam_detector import SpamDetector
@@ -31,7 +29,6 @@ class OracleUpdaterService:
         load_dotenv(ROOT / ".env")
 
         http_rpc = os.environ["MONAD_RPC"]
-        self.ws_rpc = os.environ["MONAD_WSS"]
         oracle_address = Web3.to_checksum_address(os.environ["ORACLE_ADDRESS"])
         updater_key = os.environ["UPDATER_PRIVATE_KEY"]
 
@@ -52,9 +49,8 @@ class OracleUpdaterService:
             target_spam_ratio=float(os.getenv("TARGET_SPAM_RATIO", "0.15")),
             baseline_floor_wei=int(os.getenv("BASELINE_FLOOR_WEI", "1000000")),
         )
-        self.reconnect_delay = 2.0
 
-    async def process_block(self, block_number: int) -> None:
+    def process_block(self, block_number: int) -> None:
         started_at = time.perf_counter()
         metrics = self.detector.analyze_block(block_number)
         suggested_floor = self.model.compute_optimal_gas_floor(metrics.spam_ratio, metrics.total_gas)
@@ -96,68 +92,32 @@ class OracleUpdaterService:
         sent_hash = self.w3.eth.send_raw_transaction(signed.raw_transaction)
         return sent_hash.hex()
 
-    async def catch_up_to(self, latest_block: int) -> None:
+    def catch_up_to(self, latest_block: int) -> None:
         if latest_block <= self.last_processed_block:
             return
 
         for block_number in range(self.last_processed_block + 1, latest_block + 1):
-            await self.process_block(block_number)
+            self.process_block(block_number)
 
-    async def subscribe_new_heads(self) -> None:
-        async with websockets.connect(self.ws_rpc, ping_interval=20, ping_timeout=20) as ws:
-            await ws.send(
-                json.dumps(
-                    {
-                        "jsonrpc": "2.0",
-                        "id": 1,
-                        "method": "eth_subscribe",
-                        "params": ["newHeads"],
-                    }
-                )
-            )
-            subscription_ack = json.loads(await ws.recv())
-            if "error" in subscription_ack:
-                raise RuntimeError(f"Subscription failed: {subscription_ack['error']}")
-
-            logger.info("Subscribed to Monad newHeads via %s", self.ws_rpc)
-
-            latest_known_block = self.w3.eth.block_number
-            await self.catch_up_to(latest_known_block)
-
-            async for raw_message in ws:
-                payload = json.loads(raw_message)
-                params = payload.get("params", {})
-                result = params.get("result")
-                if not result:
-                    continue
-
-                block_hex = result.get("number")
-                if not block_hex:
-                    continue
-
-                block_number = int(block_hex, 16)
-                await self.catch_up_to(block_number)
-
-    async def run(self) -> None:
+    def run(self) -> None:
         while True:
             try:
-                await self.subscribe_new_heads()
-            except asyncio.CancelledError:
-                raise
+                latest_block = self.w3.eth.block_number
+                self.catch_up_to(latest_block)
             except KeyboardInterrupt:
                 raise
             except Exception as exc:
-                logger.warning("WebSocket disconnected, reconnecting in %.1fs: %s", self.reconnect_delay, exc)
-                await asyncio.sleep(self.reconnect_delay)
+                logger.warning("HTTP polling error: %s", exc)
+            time.sleep(1)
 
 
-async def main() -> None:
+def main() -> None:
     service = OracleUpdaterService()
     try:
-        await service.run()
+        service.run()
     except KeyboardInterrupt:
         logger.info("Oracle updater stopped by user.")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

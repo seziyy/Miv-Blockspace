@@ -12,9 +12,12 @@ from web3 import Web3
 TRANSFER_SIG = Web3.keccak(text="Transfer(address,address,uint256)").hex()
 DEFAULT_TRACE_TIMEOUT = "20s"
 DEFAULT_DEX_ROUTERS = {
-    "0x68b3465833fb72A70ecDF485E0e4C7bD8665Fc45",
+    "0xfe31f71c1b106eac32f1a19239c9a9a72ddfb900",
+    "0x0d97dc33264bfc1c226207428a79b26757fb9dc3",
 }
-DEFAULT_DEX_POOLS: Set[str] = set()
+DEFAULT_DEX_POOLS: Set[str] = {
+    "0x204faca1764b154221e35c0d20abb3c525710498",
+}
 DEX_ADDRESS_FILE = Path(__file__).resolve().parent / "dex_addresses.json"
 
 logger = logging.getLogger(__name__)

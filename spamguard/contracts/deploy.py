@@ -10,14 +10,14 @@ from solcx import compile_standard, install_solc
 from web3 import Web3
 
 
-CHAIN_ID = 41454
+CHAIN_ID = 10143
 SOLC_VERSION = "0.8.20"
 ROOT = Path(__file__).resolve().parent
 PROJECT_ROOT = ROOT.parent
 SOURCE_PATH = ROOT / "SpamOracle.sol"
 ARTIFACT_PATH = ROOT / "artifacts" / "SpamOracle.json"
 DEPLOYMENT_PATH = ROOT / "deployment.json"
-EXPLORER_URL_TEMPLATE = "https://monadexplorer.com/address/{address}"
+EXPLORER_URL_TEMPLATE = "https://testnet.monadexplorer.com/address/{address}"
 
 
 def load_env() -> None:
