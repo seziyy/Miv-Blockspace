@@ -1,0 +1,15 @@
+{
+  "buildCommand": "cd spamguard/frontend && npm install && npm run build",
+  "outputDirectory": "spamguard/frontend/dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/dashboard",
+      "destination": "/"
+    },
+    {
+      "source": "/landing",
+      "destination": "/landing.html"
+    }
+  ]
+}
