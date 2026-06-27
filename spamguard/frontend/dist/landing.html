@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Miv Blockspace monitors Monad spam pressure, oracle writes, and adaptive blockspace signals."
+    />
+    <title>Miv Blockspace | Monad Blockspace Intelligence</title>
+    <style>
+      :root {
+        --ink: #111111;
+        --muted: #5d5a54;
+        --paper: #f4efe6;
+        --paper-deep: #ece6db;
+        --line: #2b2b2b;
+        --accent: #5f7f73;
+        --accent-soft: #dce6df;
+        --white: #fffaf0;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        background: var(--paper-deep);
+        color: var(--ink);
+        font-family:
+          Arial Black, Arial, Helvetica, sans-serif;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .page {
+        min-height: 100vh;
+        padding: 20px;
+      }
+
+      .shell {
+        max-width: 1800px;
+        margin: 0 auto;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: var(--paper);
+      }
+
+      .nav {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 18px 28px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .brand {
+        font-size: 32px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .nav-links {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .nav-link,
+      .dashboard-link {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 10px 16px;
+        font-size: 12px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .dashboard-link {
+        min-width: 210px;
+        background: var(--accent);
+        color: var(--white);
+        text-align: center;
+        font-family: "Courier New", monospace;
+        font-size: 18px;
+        padding: 16px 24px;
+      }
+
+      .hero {
+        min-height: calc(100vh - 102px);
+      }
+
+      .hero-copy {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        min-height: calc(100vh - 102px);
+        padding: 64px;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        width: -moz-fit-content;
+        width: fit-content;
+        border: 1px solid var(--line);
+        padding: 8px 10px;
+        font-size: 11px;
+        font-weight: 900;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      h1 {
+        max-width: 880px;
+        margin: 28px 0 0;
+        font-size: clamp(54px, 8vw, 132px);
+        line-height: 0.88;
+        letter-spacing: -0.06em;
+        text-transform: uppercase;
+      }
+
+      .hero-text {
+        max-width: 680px;
+        margin: 28px 0 0;
+        color: var(--muted);
+        font-family: Arial, Helvetica, sans-serif;
+        font-size: 20px;
+        font-weight: 700;
+        line-height: 1.45;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 36px;
+      }
+
+      .primary-action,
+      .secondary-action {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 15px 20px;
+        font-size: 14px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .primary-action {
+        background: var(--ink);
+        color: var(--white);
+      }
+
+      .secondary-action {
+        background: transparent;
+      }
+
+      @media (max-width: 980px) {
+        .hero-copy {
+          padding: 42px 28px;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .page {
+          padding: 10px;
+        }
+
+        .nav {
+          align-items: flex-start;
+          flex-direction: column;
+          padding: 18px;
+        }
+
+        h1 {
+          font-size: clamp(48px, 18vw, 86px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <div class="shell">
+        <nav class="nav">
+          <a class="brand" href="/landing.html">Miv Blockspace</a>
+          <div class="nav-links">
+            <a class="dashboard-link" data-scramble href="/">Dashboard</a>
+          </div>
+        </nav>
+
+        <section class="hero">
+          <div class="hero-copy">
+            <span class="eyebrow">Monad blockspace intelligence</span>
+            <h1>See spam before it prices the block.</h1>
+            <p class="hero-text">
+              Miv Blockspace monitors live spam pressure, adaptive gas floor signals,
+              and oracle writes for teams building on Monad.
+            </p>
+            <div class="actions">
+              <a class="primary-action" data-scramble href="/">Open dashboard</a>
+              <a class="secondary-action" data-scramble href="/">View signal model</a>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+      function scramble(element) {
+        const original = element.dataset.label || element.textContent;
+        element.dataset.label = original;
+        let frame = 0;
+        window.clearInterval(element._scrambleTimer);
+        element._scrambleTimer = window.setInterval(() => {
+          frame += 1;
+          element.textContent = original
+            .split("")
+            .map((char, index) => {
+              if (char === " ") return " ";
+              if (frame > index + 5) return char;
+              return chars[Math.floor(Math.random() * chars.length)];
+            })
+            .join("");
+
+          if (frame > original.length + 6) {
+            window.clearInterval(element._scrambleTimer);
+            element.textContent = original;
+          }
+        }, 35);
+      }
+
+      document.querySelectorAll("[data-scramble]").forEach((element) => {
+        element.addEventListener("mouseenter", () => scramble(element));
+      });
+    </script>
+  </body>
+</html>

@@ -549,9 +549,9 @@ export default function App() {
             Miv Blockspace
           </div>
 
-          <div className="inline-flex min-w-[142px] items-center justify-center rounded-[12px] border border-[#2b2b2b] bg-[#5f7f73] px-5 py-2.5 text-[16px] font-black uppercase text-[#fffaf0]">
+          <a className="inline-flex min-w-[142px] items-center justify-center rounded-[12px] border border-[#2b2b2b] bg-[#5f7f73] px-5 py-2.5 text-[16px] font-black uppercase text-[#fffaf0]" href="/landing.html">
             <ScrambleDashboardButtonText />
-          </div>
+          </a>
         </header>
 
         <div className="px-7 py-10">
