@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {
   LineChart,
   Line,
@@ -10,10 +10,12 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-const WS_URL = "ws://localhost:8765";
+const WS_PROTOCOL = window.location.protocol === "https:" ? "wss" : "ws";
+const WS_URL = `${WS_PROTOCOL}://${window.location.hostname}:8765`;
 const EXPLORER_BASE_URL = "https://testnet.monadexplorer.com";
 const ORACLE_ADDRESS = "0x1c80d99dF50075D456830016d8a2ba318d1cb321";
 const PAPER_URL = "https://arxiv.org/abs/2604.00234";
+const STORAGE_KEY = "spamguard_blocks_v1";
 
 function formatPercent(value) {
   if (typeof value !== "number" || Number.isNaN(value)) return "\u2014";
@@ -83,8 +85,12 @@ function normalizeBlock(block) {
     total_gas: Number(block.total_gas),
     spam_tx_count: Number(block.spam_tx_count),
     total_txs: Number(block.total_txs),
-    suggested_floor_gwei: Number(block.suggested_floor_gwei),
+    suggested_floor_gwei: Number(
+      block.suggested_floor_gwei ??
+        (typeof block.suggested_floor === "number" ? block.suggested_floor / 1e9 : block.suggested_floor),
+    ),
     analysis_time_ms: Number(block.analysis_time_ms),
+    oracle_tx: block.oracle_tx ?? block.oracle_tx_hash ?? null,
   };
 }
 
@@ -102,6 +108,19 @@ function mergeBlocks(currentBlocks, incomingBlocks, limit) {
   return Array.from(byBlockNumber.values())
     .sort((a, b) => a.block_number - b.block_number)
     .slice(-limit);
+}
+
+function loadStoredBlocks() {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(normalizeBlock).filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 function MetricCard({ label, value, helper, valueClass = "text-zinc-50", children }) {
@@ -160,7 +179,7 @@ function CustomTooltip({ active, payload }) {
 
 export default function App() {
   const [connected, setConnected] = useState(false);
-  const [blocks, setBlocks] = useState([]);
+  const [blocks, setBlocks] = useState(() => loadStoredBlocks());
   const [latestBlock, setLatestBlock] = useState(null);
   const [highSpamBlocks, setHighSpamBlocks] = useState([]);
   const [oracleTxs, setOracleTxs] = useState([]);
@@ -246,6 +265,27 @@ export default function App() {
 
   useEffect(() => {
     setLatestBlock(blocks[blocks.length - 1] || null);
+  }, [blocks]);
+
+  useEffect(() => {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(blocks));
+
+    setHighSpamBlocks(
+      [...blocks]
+        .filter((block) => block.spam_ratio > 0.5)
+        .slice(-10)
+        .reverse(),
+    );
+
+    const deduped = [];
+    [...blocks]
+      .sort((a, b) => b.block_number - a.block_number)
+      .map((block) => block.oracle_tx)
+      .filter((hash) => typeof hash === "string" && hash.length > 0)
+      .forEach((hash) => {
+        if (!deduped.includes(hash)) deduped.push(hash);
+      });
+    setOracleTxs(deduped.slice(0, 5));
   }, [blocks]);
 
   const chartData = blocks.map((block) => ({
