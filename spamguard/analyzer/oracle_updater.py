@@ -47,7 +47,7 @@ class OracleUpdaterService:
         self.model = CategoryLabsModel(
             d0=float(os.getenv("MODEL_D0", "1200")),
             beta=float(os.getenv("MODEL_BETA", "6")),
-            slot_cost=float(os.getenv("MODEL_SLOT_COST", "20")),
+            s=float(os.getenv("MODEL_SLOT_COST", "20")),
             r0=float(os.getenv("MODEL_R0", "6000")),
             target_spam_ratio=float(os.getenv("TARGET_SPAM_RATIO", "0.15")),
             baseline_floor_wei=int(os.getenv("BASELINE_FLOOR_WEI", "1000000")),
